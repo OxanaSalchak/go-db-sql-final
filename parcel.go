@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"errors"
 	"fmt"
 )
 
@@ -30,13 +31,13 @@ func (s ParcelStore) Add(p Parcel) (int, error) {
 func (s ParcelStore) Get(number int) (Parcel, error) {
 	// реализуйте чтение строки по заданному number
 	// здесь из таблицы должна вернуться только одна строка
-	query := "SELECT client, status, address, created_at FROM parcel WHERE number = ?"
+	query := "SELECT number, client, status, address, created_at FROM parcel WHERE number = ?"
 	row := s.db.QueryRow(query, number)
 	// заполните объект Parcel данными из таблицы
 	p := Parcel{}
-	err := row.Scan(&p.Client, &p.Status, &p.Address, &p.CreatedAt)
+	err := row.Scan(&p.Number, &p.Client, &p.Status, &p.Address, &p.CreatedAt)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return Parcel{}, fmt.Errorf("no parcel found with number %d", number)
 		}
 		return Parcel{}, err
@@ -88,22 +89,19 @@ func (s ParcelStore) SetStatus(number int, status string) error {
 func (s ParcelStore) SetAddress(number int, address string) error {
 	// реализуйте обновление адреса в таблице parcel
 	// менять адрес можно только если значение статуса registered
-	var currentStatus string
-	statusQuery := "SELECT status FROM parcel WHERE number = ?"
-	err := s.db.QueryRow(statusQuery, number).Scan(&currentStatus)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return fmt.Errorf("no parcel found with number %d", number)
-		}
-		return err
-	}
-	if currentStatus != "registered" {
-		return fmt.Errorf("cannot change address: parcel status is '%s', must be 'registered'", currentStatus)
-	}
-	updateQuery := "UPDATE parcel SET address = ? WHERE number = ?"
-	_, err = s.db.Exec(updateQuery, address, number)
+	// извините, что долго-долго... мне и изначальный код было очень-очень сложно написать)))
+	// а с Вашими комментариями тоже пришлось посидеть, поразбираться))) множко тугодум я)))
+	updateQuery := "UPDATE parcel SET address = ? WHERE number = ? AND status = 'registered'"
+	result, err := s.db.Exec(updateQuery, address, number)
 	if err != nil {
 		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("cannot change address: parcel status is not 'registered' or parcel not found")
 	}
 	return nil
 }
@@ -111,22 +109,17 @@ func (s ParcelStore) SetAddress(number int, address string) error {
 func (s ParcelStore) Delete(number int) error {
 	// реализуйте удаление строки из таблицы parcel
 	// удалять строку можно только если значение статуса registered
-	var currentStatus string
-	statusQuery := "SELECT status FROM parcel WHERE number = ?"
-	err := s.db.QueryRow(statusQuery, number).Scan(&currentStatus)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return fmt.Errorf("no parcel found with number %d", number)
-		}
-		return err
-	}
-	if currentStatus != "registered" {
-		return fmt.Errorf("cannot delete parcel: status is '%s', must be 'registered'", currentStatus)
-	}
-	deleteQuery := "DELETE FROM parcel WHERE number = ?"
-	_, err = s.db.Exec(deleteQuery, number)
+	deleteQuery := "DELETE FROM parcel WHERE number = ? AND status = 'registered'"
+	result, err := s.db.Exec(deleteQuery, number)
 	if err != nil {
 		return err
+	}
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return fmt.Errorf("cannot delete parcel: status is not 'registered' or parcel not found")
 	}
 	return nil
 }
